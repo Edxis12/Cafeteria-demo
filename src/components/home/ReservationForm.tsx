@@ -195,7 +195,7 @@ export function ReservationForm() {
                                         <input
                                             {...register('name')}
                                             type="text"
-                                            placeholder="Ej. Sofía Mendoza"
+                                            placeholder="Ej. Ernesto Lopez"
                                             className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-[#100D0A] border border-[#2D2620] focus:border-[#D57E7E] text-sm text-white outline-none transition-colors"
                                         />
                                     </div>
@@ -210,7 +210,7 @@ export function ReservationForm() {
                                         <input
                                             {...register('email')}
                                             type="email"
-                                            placeholder="sofia@ejemplo.com"
+                                            placeholder="ernesto@ejemplo.com"
                                             className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-[#100D0A] border border-[#2D2620] focus:border-[#D57E7E] text-sm text-white outline-none transition-colors"
                                         />
                                     </div>
