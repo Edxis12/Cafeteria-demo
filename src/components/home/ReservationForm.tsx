@@ -19,13 +19,22 @@ import {
     Sun,
     ArrowRight,
     AlertCircle,
+    Loader2,
 } from 'lucide-react';
 
 const reservationSchema = z.object({
-    name: z.string().min(2, 'El nombre debe tener al menos 2 caracteres').max(60, 'Máximo 60 caracteres'),
+    name: z
+        .string()
+        .min(2, 'El nombre debe tener al menos 2 caracteres')
+        .max(60, 'Máximo 60 caracteres'),
     email: z.string().email('Ingresa un correo electrónico válido'),
-    phone: z.string().min(10, 'Ingresa un número de teléfono válido (mínimo 10 dígitos)'),
-    guests: z.number().min(1, 'Mínimo 1 persona').max(10, 'Máximo 10 personas por reserva'),
+    phone: z
+        .string()
+        .min(10, 'Ingresa un número de teléfono válido (mínimo 10 dígitos)'),
+    guests: z
+        .number({ invalid_type_error: 'Ingresa un número válido' })
+        .min(1, 'Mínimo 1 persona')
+        .max(10, 'Máximo 10 personas por reserva'),
     reservation_date: z.string().min(1, 'Selecciona una fecha'),
     reservation_time: z.string().min(1, 'Selecciona una hora'),
     website_hp_check: z.string().optional(), // Honeypot anti-spam
@@ -37,21 +46,24 @@ const ZONES = [
     {
         id: 'barra',
         title: 'Barra de Especialidad',
-        description: 'Frente a los baristas. Ideal para los amantes de métodos filtrados y el arte del espresso.',
+        description:
+            'Frente a los baristas. Ideal para los amantes de métodos filtrados y el arte del espresso.',
         icon: Coffee,
         name: 'Barra de Especialidad',
     },
     {
         id: 'salon',
         title: 'Salón Principal',
-        description: 'Ambiente cálido y tranquilo con música suave. Perfecto para reuniones o trabajo en laptop.',
+        description:
+            'Ambiente cálido y tranquilo con música suave. Perfecto para reuniones o trabajo en laptop.',
         icon: Armchair,
         name: 'Salón Principal',
     },
     {
         id: 'terraza',
         title: 'Terraza Pet-Friendly',
-        description: 'Espacio al aire libre con vegetación. Acondicionado para disfrutar con tu mascota.',
+        description:
+            'Espacio al aire libre con vegetación. Acondicionado para disfrutar con tu mascota.',
         icon: Sun,
         name: 'Terraza Pet-Friendly',
     },
@@ -63,7 +75,7 @@ export function ReservationForm() {
     const [isSuccess, setIsSuccess] = useState(false);
     const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-    // Fecha mínima permitida (día de hoy)
+    // Fecha mínima permitida (día actual local)
     const todayDate = useMemo(() => {
         const d = new Date();
         const year = d.getFullYear();
@@ -89,7 +101,8 @@ export function ReservationForm() {
         setIsSubmitting(true);
         setErrorMessage(null);
 
-        const activeZone = ZONES.find((z) => z.id === selectedZone)?.name || 'Salón Principal';
+        const activeZone =
+            ZONES.find((z) => z.id === selectedZone)?.name || 'Salón Principal';
 
         const payload = {
             name: data.name.trim(),
@@ -116,18 +129,25 @@ export function ReservationForm() {
                 reset();
             } else {
                 const firstError =
-                    result.details?.[0]?.message || result.error || 'Hubo un error al procesar tu reserva.';
+                    result.details?.[0]?.message ||
+                    result.error ||
+                    'Hubo un error al procesar tu reserva.';
                 setErrorMessage(firstError);
             }
         } catch {
-            setErrorMessage('Error de conexión con el servidor. Inténtalo de nuevo.');
+            setErrorMessage(
+                'Error de conexión con el servidor. Por favor, verifica tu conexión.'
+            );
         } finally {
             setIsSubmitting(false);
         }
     };
 
     return (
-        <section id="reservas" className="relative max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-12 sm:py-24">
+        <section
+            id="reservas"
+            className="relative max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-12 sm:py-24"
+        >
             {/* Halo ambiental suave */}
             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[280px] sm:w-[550px] h-[280px] sm:h-[550px] bg-[#D57E7E]/5 rounded-full blur-[100px] sm:blur-[140px] pointer-events-none" />
 
@@ -141,11 +161,12 @@ export function ReservationForm() {
                         Asegura Tu Experiencia
                     </h2>
                     <p className="text-xs sm:text-sm text-[#A39B92] leading-relaxed px-2">
-                        Elige la zona de tu preferencia y la fecha ideal. Te confirmaremos tu mesa al instante.
+                        Elige la zona de tu preferencia y la fecha ideal. Te confirmaremos tu
+                        mesa al instante.
                     </p>
                 </div>
 
-                {/* Modal / Banner de Éxito */}
+                {/* Banner de Éxito */}
                 <AnimatePresence>
                     {isSuccess && (
                         <motion.div
@@ -161,7 +182,9 @@ export function ReservationForm() {
                                 ¡Reserva Solicitada con Éxito!
                             </h3>
                             <p className="text-xs sm:text-sm text-[#C5BCB3] max-w-md mx-auto leading-relaxed">
-                                Hemos recibido tus datos correctamente y te hemos enviado un correo de confirmación. Nuestro equipo preparará tu mesa en el ambiente seleccionado.
+                                Hemos recibido tus datos correctamente y te hemos enviado un correo
+                                de confirmación. Nuestro equipo preparará tu mesa en el ambiente
+                                seleccionado.
                             </p>
                             <button
                                 onClick={() => setIsSuccess(false)}
@@ -174,7 +197,10 @@ export function ReservationForm() {
                 </AnimatePresence>
 
                 {!isSuccess && (
-                    <form onSubmit={handleSubmit(onSubmit)} className="space-y-8 sm:space-y-10">
+                    <form
+                        onSubmit={handleSubmit(onSubmit)}
+                        className="space-y-8 sm:space-y-10"
+                    >
                         {/* Campo Honeypot Oculto (Anti-Bots) */}
                         <input
                             type="text"
@@ -184,7 +210,7 @@ export function ReservationForm() {
                             autoComplete="off"
                         />
 
-                        {/* Mensaje de error retornado por el backend */}
+                        {/* Mensaje de error */}
                         {errorMessage && (
                             <div className="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs flex items-center gap-2.5">
                                 <AlertCircle size={16} className="shrink-0" />
@@ -214,13 +240,19 @@ export function ReservationForm() {
                                             {isSelected && (
                                                 <motion.div
                                                     layoutId="activeZoneIndicator"
-                                                    className="absolute inset-0 border-2 border-[#D57E7E] rounded-2xl pointer-events-none"
-                                                    transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+                                                    className="absolute inset-0 border-2 border-[#D57E7E] rounded-2xl pointer-events-none transform-gpu"
+                                                    transition={{
+                                                        type: 'spring',
+                                                        stiffness: 400,
+                                                        damping: 30,
+                                                    }}
                                                 />
                                             )}
                                             <div className="flex items-center justify-between">
                                                 <div
-                                                    className={`p-2 sm:p-2.5 rounded-xl transition-colors ${isSelected ? 'bg-[#D57E7E] text-white shadow-md' : 'bg-[#231F1B] text-[#A39B92]'
+                                                    className={`p-2 sm:p-2.5 rounded-xl transition-colors ${isSelected
+                                                            ? 'bg-[#D57E7E] text-white shadow-md'
+                                                            : 'bg-[#231F1B] text-[#A39B92]'
                                                         }`}
                                                 >
                                                     <Icon size={18} />
@@ -232,8 +264,12 @@ export function ReservationForm() {
                                                 )}
                                             </div>
                                             <div className="space-y-1">
-                                                <h4 className="font-serif font-bold text-sm sm:text-base text-[#F8F5F2]">{zone.title}</h4>
-                                                <p className="text-xs text-[#A39B92] leading-relaxed">{zone.description}</p>
+                                                <h4 className="font-serif font-bold text-sm sm:text-base text-[#F8F5F2]">
+                                                    {zone.title}
+                                                </h4>
+                                                <p className="text-xs text-[#A39B92] leading-relaxed">
+                                                    {zone.description}
+                                                </p>
                                             </div>
                                         </div>
                                     );
@@ -250,9 +286,14 @@ export function ReservationForm() {
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-5">
                                 {/* Nombre */}
                                 <div className="space-y-1.5">
-                                    <label className="block text-xs font-medium text-[#C5BCB3]">Nombre Completo</label>
+                                    <label className="block text-xs font-medium text-[#C5BCB3]">
+                                        Nombre Completo
+                                    </label>
                                     <div className="relative">
-                                        <User size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+                                        <User
+                                            size={16}
+                                            className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none"
+                                        />
                                         <input
                                             {...register('name')}
                                             type="text"
@@ -260,14 +301,23 @@ export function ReservationForm() {
                                             className="w-full pl-11 pr-4 py-3 rounded-2xl bg-[#100D0A] border border-[#2D2620] focus:border-[#D57E7E] focus:ring-1 focus:ring-[#D57E7E]/30 text-sm text-white outline-none transition-all placeholder:text-gray-600"
                                         />
                                     </div>
-                                    {errors.name && <p className="text-[11px] text-rose-400 mt-1">{errors.name.message}</p>}
+                                    {errors.name && (
+                                        <p className="text-[11px] text-rose-400 mt-1">
+                                            {errors.name.message}
+                                        </p>
+                                    )}
                                 </div>
 
                                 {/* Correo */}
                                 <div className="space-y-1.5">
-                                    <label className="block text-xs font-medium text-[#C5BCB3]">Correo Electrónico</label>
+                                    <label className="block text-xs font-medium text-[#C5BCB3]">
+                                        Correo Electrónico
+                                    </label>
                                     <div className="relative">
-                                        <Mail size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+                                        <Mail
+                                            size={16}
+                                            className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none"
+                                        />
                                         <input
                                             {...register('email')}
                                             type="email"
@@ -275,14 +325,23 @@ export function ReservationForm() {
                                             className="w-full pl-11 pr-4 py-3 rounded-2xl bg-[#100D0A] border border-[#2D2620] focus:border-[#D57E7E] focus:ring-1 focus:ring-[#D57E7E]/30 text-sm text-white outline-none transition-all placeholder:text-gray-600"
                                         />
                                     </div>
-                                    {errors.email && <p className="text-[11px] text-rose-400 mt-1">{errors.email.message}</p>}
+                                    {errors.email && (
+                                        <p className="text-[11px] text-rose-400 mt-1">
+                                            {errors.email.message}
+                                        </p>
+                                    )}
                                 </div>
 
                                 {/* Teléfono */}
                                 <div className="space-y-1.5">
-                                    <label className="block text-xs font-medium text-[#C5BCB3]">Teléfono Móvil</label>
+                                    <label className="block text-xs font-medium text-[#C5BCB3]">
+                                        Teléfono Móvil
+                                    </label>
                                     <div className="relative">
-                                        <Phone size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+                                        <Phone
+                                            size={16}
+                                            className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none"
+                                        />
                                         <input
                                             {...register('phone')}
                                             type="tel"
@@ -290,14 +349,23 @@ export function ReservationForm() {
                                             className="w-full pl-11 pr-4 py-3 rounded-2xl bg-[#100D0A] border border-[#2D2620] focus:border-[#D57E7E] focus:ring-1 focus:ring-[#D57E7E]/30 text-sm text-white outline-none transition-all placeholder:text-gray-600"
                                         />
                                     </div>
-                                    {errors.phone && <p className="text-[11px] text-rose-400 mt-1">{errors.phone.message}</p>}
+                                    {errors.phone && (
+                                        <p className="text-[11px] text-rose-400 mt-1">
+                                            {errors.phone.message}
+                                        </p>
+                                    )}
                                 </div>
 
                                 {/* Comensales */}
                                 <div className="space-y-1.5">
-                                    <label className="block text-xs font-medium text-[#C5BCB3]">Número de Comensales</label>
+                                    <label className="block text-xs font-medium text-[#C5BCB3]">
+                                        Número de Comensales
+                                    </label>
                                     <div className="relative">
-                                        <Users size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+                                        <Users
+                                            size={16}
+                                            className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none"
+                                        />
                                         <input
                                             {...register('guests', { valueAsNumber: true })}
                                             type="number"
@@ -306,14 +374,23 @@ export function ReservationForm() {
                                             className="w-full pl-11 pr-4 py-3 rounded-2xl bg-[#100D0A] border border-[#2D2620] focus:border-[#D57E7E] focus:ring-1 focus:ring-[#D57E7E]/30 text-sm text-white outline-none transition-all"
                                         />
                                     </div>
-                                    {errors.guests && <p className="text-[11px] text-rose-400 mt-1">{errors.guests.message}</p>}
+                                    {errors.guests && (
+                                        <p className="text-[11px] text-rose-400 mt-1">
+                                            {errors.guests.message}
+                                        </p>
+                                    )}
                                 </div>
 
                                 {/* Fecha */}
                                 <div className="space-y-1.5">
-                                    <label className="block text-xs font-medium text-[#C5BCB3]">Fecha de Reserva</label>
+                                    <label className="block text-xs font-medium text-[#C5BCB3]">
+                                        Fecha de Reserva
+                                    </label>
                                     <div className="relative">
-                                        <Calendar size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+                                        <Calendar
+                                            size={16}
+                                            className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none"
+                                        />
                                         <input
                                             {...register('reservation_date')}
                                             type="date"
@@ -321,29 +398,58 @@ export function ReservationForm() {
                                             className="w-full pl-11 pr-4 py-3 rounded-2xl bg-[#100D0A] border border-[#2D2620] focus:border-[#D57E7E] focus:ring-1 focus:ring-[#D57E7E]/30 text-sm text-white [color-scheme:dark] cursor-pointer outline-none transition-all"
                                         />
                                     </div>
-                                    {errors.reservation_date && <p className="text-[11px] text-rose-400 mt-1">{errors.reservation_date.message}</p>}
+                                    {errors.reservation_date && (
+                                        <p className="text-[11px] text-rose-400 mt-1">
+                                            {errors.reservation_date.message}
+                                        </p>
+                                    )}
                                 </div>
 
                                 {/* Hora */}
                                 <div className="space-y-1.5">
-                                    <label className="block text-xs font-medium text-[#C5BCB3]">Hora Estimada</label>
+                                    <label className="block text-xs font-medium text-[#C5BCB3]">
+                                        Hora Estimada
+                                    </label>
                                     <div className="relative">
-                                        <Clock size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+                                        <Clock
+                                            size={16}
+                                            className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none"
+                                        />
                                         <select
                                             {...register('reservation_time')}
                                             className="w-full pl-11 pr-4 py-3 rounded-2xl bg-[#100D0A] border border-[#2D2620] focus:border-[#D57E7E] focus:ring-1 focus:ring-[#D57E7E]/30 text-sm text-white [color-scheme:dark] cursor-pointer outline-none transition-all"
                                         >
-                                            <option value="" className="bg-[#181512] text-gray-400">Selecciona una hora</option>
-                                            <option value="08:00 AM" className="bg-[#181512] text-white">08:00 AM</option>
-                                            <option value="10:00 AM" className="bg-[#181512] text-white">10:00 AM</option>
-                                            <option value="12:00 PM" className="bg-[#181512] text-white">12:00 PM</option>
-                                            <option value="02:00 PM" className="bg-[#181512] text-white">02:00 PM</option>
-                                            <option value="04:00 PM" className="bg-[#181512] text-white">04:00 PM</option>
-                                            <option value="06:00 PM" className="bg-[#181512] text-white">06:00 PM</option>
-                                            <option value="08:00 PM" className="bg-[#181512] text-white">08:00 PM</option>
+                                            <option value="" className="bg-[#181512] text-gray-400">
+                                                Selecciona una hora
+                                            </option>
+                                            <option value="08:00 AM" className="bg-[#181512] text-white">
+                                                08:00 AM
+                                            </option>
+                                            <option value="10:00 AM" className="bg-[#181512] text-white">
+                                                10:00 AM
+                                            </option>
+                                            <option value="12:00 PM" className="bg-[#181512] text-white">
+                                                12:00 PM
+                                            </option>
+                                            <option value="02:00 PM" className="bg-[#181512] text-white">
+                                                02:00 PM
+                                            </option>
+                                            <option value="04:00 PM" className="bg-[#181512] text-white">
+                                                04:00 PM
+                                            </option>
+                                            <option value="06:00 PM" className="bg-[#181512] text-white">
+                                                06:00 PM
+                                            </option>
+                                            <option value="08:00 PM" className="bg-[#181512] text-white">
+                                                08:00 PM
+                                            </option>
                                         </select>
                                     </div>
-                                    {errors.reservation_time && <p className="text-[11px] text-rose-400 mt-1">{errors.reservation_time.message}</p>}
+                                    {errors.reservation_time && (
+                                        <p className="text-[11px] text-rose-400 mt-1">
+                                            {errors.reservation_time.message}
+                                        </p>
+                                    )}
                                 </div>
                             </div>
                         </div>
@@ -354,8 +460,17 @@ export function ReservationForm() {
                             disabled={isSubmitting}
                             className="w-full py-3.5 sm:py-4 rounded-2xl bg-[#D57E7E] text-white font-bold text-xs uppercase tracking-[0.12em] sm:tracking-[0.2em] hover:bg-[#c26d6d] transition-all cursor-pointer shadow-xl shadow-[#D57E7E]/20 hover:scale-[1.01] active:scale-[0.99] disabled:opacity-50 flex items-center justify-center gap-2 min-h-[48px]"
                         >
-                            <span>{isSubmitting ? 'Procesando Reserva...' : 'Confirmar Solicitud de Reserva'}</span>
-                            {!isSubmitting && <ArrowRight size={16} />}
+                            {isSubmitting ? (
+                                <>
+                                    <Loader2 size={16} className="animate-spin" />
+                                    <span>Procesando Reserva...</span>
+                                </>
+                            ) : (
+                                <>
+                                    <span>Confirmar Solicitud de Reserva</span>
+                                    <ArrowRight size={16} />
+                                </>
+                            )}
                         </button>
                     </form>
                 )}

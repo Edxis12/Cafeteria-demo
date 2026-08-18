@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useMemo } from 'react';
+import Image from 'next/image';
 import {
   Coffee,
   Cake,
@@ -50,7 +51,6 @@ function getProductSpecs(item: MenuItem) {
   const title = (item.title || '').toLowerCase();
   const desc = (item.description || '').toLowerCase();
 
-  // Matcha y Tés
   if (title.includes('matcha') || desc.includes('matcha') || title.includes('té') || title.includes('tea')) {
     return {
       label1: 'Grado:',
@@ -60,7 +60,6 @@ function getProductSpecs(item: MenuItem) {
     };
   }
 
-  // Postres y Panadería
   if (item.category === 'postres' || title.includes('croissant') || title.includes('pastel') || title.includes('pan')) {
     return {
       label1: 'Elaboración:',
@@ -70,7 +69,6 @@ function getProductSpecs(item: MenuItem) {
     };
   }
 
-  // Bebidas frías / Cold Brew / Frappés
   if (
     title.includes('cold brew') ||
     title.includes('frapp') ||
@@ -86,7 +84,6 @@ function getProductSpecs(item: MenuItem) {
     };
   }
 
-  // Cafés de Oaxaca
   if (title.includes('oaxaca') || desc.includes('oaxaca') || title.includes('pluma')) {
     return {
       label1: 'Origen:',
@@ -96,7 +93,6 @@ function getProductSpecs(item: MenuItem) {
     };
   }
 
-  // Café de Especialidad estándar
   return {
     label1: 'Origen:',
     val1: 'Chiapas (1,400 msnm)',
@@ -108,14 +104,13 @@ function getProductSpecs(item: MenuItem) {
 export function InteractiveMenu({ initialItems = [] }: InteractiveMenuProps) {
   const [activeCategory, setActiveCategory] = useState<string>('todos');
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [items] = useState<MenuItem[]>(initialItems);
   const [selectedItem, setSelectedItem] = useState<MenuItem | null>(null);
   const [currentPage, setCurrentPage] = useState<number>(1);
 
-  // Filtrado reactivo de productos en memoria (0 consultas de red)
+  // Filtrado reactivo en memoria
   const filteredItems = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
-    return items.filter((item) => {
+    return initialItems.filter((item) => {
       const matchesCategory = activeCategory === 'todos' || item.category === activeCategory;
       const matchesSearch =
         !q ||
@@ -123,12 +118,10 @@ export function InteractiveMenu({ initialItems = [] }: InteractiveMenuProps) {
         (item.description && item.description.toLowerCase().includes(q));
       return matchesCategory && matchesSearch;
     });
-  }, [items, activeCategory, searchQuery]);
+  }, [initialItems, activeCategory, searchQuery]);
 
-  // Cálculo de Paginación
   const totalPages = Math.ceil(filteredItems.length / ITEMS_PER_PAGE) || 1;
 
-  // Productos visibles en la página actual
   const paginatedItems = useMemo(() => {
     const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
     return filteredItems.slice(startIndex, startIndex + ITEMS_PER_PAGE);
@@ -211,7 +204,7 @@ export function InteractiveMenu({ initialItems = [] }: InteractiveMenuProps) {
         </div>
       </div>
 
-      {/* Grid de Productos con Animaciones Reactivas */}
+      {/* Grid de Productos con Animación Reactiva */}
       {filteredItems.length === 0 ? (
         <motion.div
           initial={{ opacity: 0, y: 10 }}
@@ -219,7 +212,7 @@ export function InteractiveMenu({ initialItems = [] }: InteractiveMenuProps) {
           className="text-center py-16 space-y-3"
         >
           <p className="text-sm font-semibold text-[#A39B92]">
-            No encontramos resultados para "{searchQuery}"
+            No encontramos resultados para &quot;{searchQuery}&quot;
           </p>
           <button
             onClick={() => {
@@ -250,17 +243,16 @@ export function InteractiveMenu({ initialItems = [] }: InteractiveMenuProps) {
                   onClick={() => setSelectedItem(item)}
                   className="group relative rounded-3xl bg-[#14110E] border border-[#2D2620] hover:border-[#D57E7E]/40 transition-colors duration-200 p-4 sm:p-5 flex flex-col justify-between space-y-4 cursor-pointer shadow-lg will-change-transform transform-gpu hover:-translate-y-1"
                 >
-                  <div className="relative overflow-hidden rounded-2xl h-44 sm:h-48 w-full bg-black">
-                    <img
+                  {/* Imagen optimizada con Next/Image */}
+                  <div className="relative overflow-hidden rounded-2xl h-44 sm:h-48 w-full bg-[#1A1613]">
+                    <Image
                       src={item.image_url || DEFAULT_IMAGE}
                       alt={unescapeHtml(item.title)}
-                      onError={(e) => {
-                        (e.target as HTMLImageElement).src = DEFAULT_IMAGE;
-                      }}
-                      loading="lazy"
-                      className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                      fill
+                      sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
+                      className="object-cover transition-transform duration-300 group-hover:scale-105"
                     />
-                    <span className="absolute top-3 left-3 bg-black/80 backdrop-blur-sm text-[#F8F5F2] text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-full border border-white/10">
+                    <span className="absolute top-3 left-3 z-10 bg-black/80 backdrop-blur-sm text-[#F8F5F2] text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-full border border-white/10">
                       {item.category === 'cafes'
                         ? 'Café'
                         : item.category === 'postres'
@@ -268,7 +260,7 @@ export function InteractiveMenu({ initialItems = [] }: InteractiveMenuProps) {
                           : 'Especial'}
                     </span>
 
-                    <div className="absolute top-3 right-3 bg-black/80 backdrop-blur-sm p-1.5 rounded-full text-white opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="absolute top-3 right-3 z-10 bg-black/80 backdrop-blur-sm p-1.5 rounded-full text-white opacity-0 group-hover:opacity-100 transition-opacity">
                       <Info size={14} />
                     </div>
                   </div>
@@ -295,7 +287,7 @@ export function InteractiveMenu({ initialItems = [] }: InteractiveMenuProps) {
             </AnimatePresence>
           </motion.div>
 
-          {/* Paginación Reactiva */}
+          {/* Paginación */}
           {totalPages > 1 && (
             <div className="mt-10 sm:mt-14 flex flex-col sm:flex-row items-center justify-between gap-4 p-4 rounded-3xl bg-[#14110E] border border-[#2D2620]">
               <span className="text-xs text-[#A39B92]">
@@ -329,8 +321,8 @@ export function InteractiveMenu({ initialItems = [] }: InteractiveMenuProps) {
                         document.getElementById('menu')?.scrollIntoView({ behavior: 'smooth' });
                       }}
                       className={`w-8 h-8 rounded-xl text-xs font-bold transition-all cursor-pointer ${currentPage === pageNum
-                        ? 'bg-[#D57E7E] text-white shadow-md shadow-[#D57E7E]/20'
-                        : 'bg-[#1C1814] text-[#A39B92] hover:text-white border border-[#2D2620]'
+                          ? 'bg-[#D57E7E] text-white shadow-md shadow-[#D57E7E]/20'
+                          : 'bg-[#1C1814] text-[#A39B92] hover:text-white border border-[#2D2620]'
                         }`}
                     >
                       {pageNum}
@@ -373,18 +365,17 @@ export function InteractiveMenu({ initialItems = [] }: InteractiveMenuProps) {
               onClick={(e) => e.stopPropagation()}
               className="bg-[#14110E] border border-[#2D2620] rounded-3xl max-w-md w-full max-h-[90vh] overflow-y-auto shadow-2xl cursor-default my-auto"
             >
-              <div className="relative">
-                <img
+              <div className="relative h-48 sm:h-56 w-full bg-[#1A1613]">
+                <Image
                   src={selectedItem.image_url || DEFAULT_IMAGE}
                   alt={unescapeHtml(selectedItem.title)}
-                  onError={(e) => {
-                    (e.target as HTMLImageElement).src = DEFAULT_IMAGE;
-                  }}
-                  className="w-full h-48 sm:h-56 object-cover"
+                  fill
+                  sizes="(max-width: 768px) 100vw, 448px"
+                  className="object-cover"
                 />
                 <button
                   onClick={() => setSelectedItem(null)}
-                  className="absolute top-3 right-3 bg-black/80 text-white p-2 rounded-full hover:bg-black transition-colors cursor-pointer border border-white/10"
+                  className="absolute top-3 right-3 z-10 bg-black/80 text-white p-2 rounded-full hover:bg-black transition-colors cursor-pointer border border-white/10"
                   title="Cerrar"
                 >
                   <X size={16} />

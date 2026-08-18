@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useRef } from 'react';
-import { supabase } from '@/src/lib/supabase';
+import dynamic from 'next/dynamic';
 import {
     Star,
     MapPin,
@@ -14,7 +14,12 @@ import {
     ChevronLeft,
     ChevronRight,
 } from 'lucide-react';
-import { ReviewModal } from './ReviewModal';
+
+// Carga diferida del modal de reseña (no pesa en el bundle inicial)
+const DynamicReviewModal = dynamic(
+    () => import('./ReviewModal').then((mod) => mod.ReviewModal),
+    { ssr: false }
+);
 
 interface Review {
     id: string;
@@ -32,13 +37,18 @@ export function FooterSection() {
 
     useEffect(() => {
         async function loadReviews() {
-            const { data } = await supabase
-                .from('reviews')
-                .select('*')
-                .eq('is_approved', true)
-                .order('created_at', { ascending: false });
-
-            if (data) setReviews(data);
+            try {
+                const res = await fetch('/api/reviews');
+                if (!res.ok) return;
+                const result = await res.json();
+                if (result.data) {
+                    setReviews(result.data);
+                } else if (Array.isArray(result)) {
+                    setReviews(result);
+                }
+            } catch {
+                // Fallback silencioso en caso de error de red
+            }
         }
 
         loadReviews();
@@ -87,7 +97,6 @@ export function FooterSection() {
 
                 {/* Carrusel Deslizable */}
                 <div className="relative">
-                    {/* Flechas de navegación (visibles en tablets y escritorio cuando hay más de una reseña) */}
                     {reviews.length > 1 && (
                         <div className="hidden sm:flex justify-end gap-2 mb-4">
                             <button
@@ -107,7 +116,6 @@ export function FooterSection() {
                         </div>
                     )}
 
-                    {/* Contenedor horizontal con Scroll Snap */}
                     <div
                         ref={sliderRef}
                         className="flex gap-4 sm:gap-6 overflow-x-auto snap-x snap-mandatory pb-4 pt-1 px-1 scrollbar-none scroll-smooth"
@@ -130,7 +138,7 @@ export function FooterSection() {
                                     </div>
 
                                     <p className="text-xs sm:text-sm text-[#C5BCB3] italic leading-relaxed line-clamp-4">
-                                        "{review.comment}"
+                                        &quot;{review.comment}&quot;
                                     </p>
                                 </div>
 
@@ -151,7 +159,7 @@ export function FooterSection() {
                 </div>
             </div>
 
-            {/* Info de contacto y Footer */}
+            {/* Info de contacto y Navegación */}
             <div
                 id="contacto"
                 className="relative z-10 max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-12 sm:py-16 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8 sm:gap-10 text-xs text-[#A39B92]"
@@ -209,8 +217,8 @@ export function FooterSection() {
                 </div>
             </div>
 
-            {/* Modal Interactivo de Reseñas */}
-            <ReviewModal
+            {/* Modal montado bajo demanda */}
+            <DynamicReviewModal
                 isOpen={isReviewModalOpen}
                 onClose={() => setIsReviewModalOpen(false)}
             />

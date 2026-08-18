@@ -8,7 +8,7 @@ const allowedOrigins = [
   'https://velvet-roasters.vercel.app',
 ];
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const origin = request.headers.get('origin');
   const isApiRoute = request.nextUrl.pathname.startsWith('/api');
 

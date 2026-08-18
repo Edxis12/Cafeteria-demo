@@ -1,11 +1,24 @@
 'use client';
 
 import { useEffect } from 'react';
-import { supabase } from '@/src/lib/supabase';
 
 export function SessionGuard() {
     useEffect(() => {
-        supabase.auth.signOut();
+        // 1. Limpieza de tokens en storage local sin importar el SDK
+        if (typeof window !== 'undefined') {
+            try {
+                Object.keys(localStorage).forEach((key) => {
+                    if (key.startsWith('sb-')) {
+                        localStorage.removeItem(key);
+                    }
+                });
+            } catch {
+                // Ignorar si el almacenamiento está restringido
+            }
+        }
+
+        // 2. Notificar al backend para revocar sesión en servidor
+        fetch('/api/auth/logout', { method: 'POST' }).catch(() => { });
     }, []);
 
     return null;

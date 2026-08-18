@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "analyze": "cross-env ANALYZE=true next build"
+    "analyze": "cross-env ANALYZE=true next build --webpack"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.7.1",
