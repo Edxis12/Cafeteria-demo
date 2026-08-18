@@ -1,166 +1,295 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/src/lib/supabase';
-import { Calendar, Clock, Users, Mail, Phone, RefreshCw, CheckCircle, XCircle, LogOut, Plus, Trash2, Edit, Coffee, Utensils, X } from 'lucide-react';
+import { playNotificationSound } from '@/src/lib/audio';
+import { AdminHeader } from '@/src/components/admin/AdminHeader';
+import { AdminStats } from '@/src/components/admin/AdminStats';
+import { ReservationsTab, Reservation } from '@/src/components/admin/ReservationTab';
+import { MenuTab, MenuItem } from '@/src/components/admin/MenuTab';
+import { ReviewsTab, AdminReview } from '@/src/components/admin/ReviewsTab';
+import { EditMenuModal } from '@/src/components/admin/EditMenuModal';
+import { useDebounce } from '@/src/hooks/useDebounce';
+import { RefreshCw, Utensils, Coffee, Star, Download } from 'lucide-react';
 
-interface Reservation {
-  id: string;
-  created_at: string;
-  name: string;
-  email: string;
-  phone: string;
-  guests: number;
-  reservation_date: string;
-  reservation_time: string;
-  zone?: string;
-  status: string;
-}
-
-interface MenuItem {
-  id: string;
-  title: string;
-  description: string;
-  price: number;
-  category: string;
-  image_url: string;
-  is_available: boolean;
+interface DashboardStats {
+  total: number;
+  pending: number;
+  confirmedGuests: number;
+  seasonalCount: number;
 }
 
 export default function AdminDashboard() {
-  const [activeTab, setActiveTab] = useState<'reservations' | 'menu'>('reservations');
+  const [activeTab, setActiveTab] = useState<'reservations' | 'menu' | 'reviews'>('reservations');
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
+  const [reviews, setReviews] = useState<AdminReview[]>([]);
   const [loading, setLoading] = useState(true);
   const [authenticated, setAuthenticated] = useState(false);
-  const router = useRouter();
-
-  // Estado Formulario Nuevo Producto
-  const [newTitle, setNewTitle] = useState('');
-  const [newDesc, setNewDesc] = useState('');
-  const [newPrice, setNewPrice] = useState('');
-  const [newCategory, setNewCategory] = useState('cafes');
-  const [newImageUrl, setNewImageUrl] = useState('');
-  const [isAdding, setIsAdding] = useState(false);
-
-  // Estado Edición de Producto
+  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
+  const [newArrivalAlert, setNewArrivalAlert] = useState<string | null>(null);
   const [editingItem, setEditingItem] = useState<MenuItem | null>(null);
-  const [editTitle, setEditTitle] = useState('');
-  const [editDesc, setEditDesc] = useState('');
-  const [editPrice, setEditPrice] = useState('');
-  const [editCategory, setEditCategory] = useState('cafes');
-  const [editImageUrl, setEditImageUrl] = useState('');
   const [isUpdating, setIsUpdating] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'confirmed' | 'cancelled'>('all');
+
+  // Estado centralizado de métricas exactas (PERF-11)
+  const [stats, setStats] = useState<DashboardStats>({
+    total: 0,
+    pending: 0,
+    confirmedGuests: 0,
+    seasonalCount: 0,
+  });
+
+  const router = useRouter();
+  const debouncedSearchQuery = useDebounce(searchQuery, 250);
+  const notificationsRef = useRef(notificationsEnabled);
 
   useEffect(() => {
-    const checkAuth = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        router.push('/admin/login');
-      } else {
-        setAuthenticated(true);
-        fetchReservations();
-        fetchMenuItems();
+    notificationsRef.current = notificationsEnabled;
+  }, [notificationsEnabled]);
+
+  const toggleBrowserNotifications = async () => {
+    if (notificationsEnabled) {
+      setNotificationsEnabled(false);
+      return;
+    }
+    playNotificationSound();
+    if ('Notification' in window && Notification.permission !== 'granted') {
+      try {
+        await Notification.requestPermission();
+      } catch (err) {
+        console.log('Error solicitando permisos:', err);
       }
+    }
+    setNotificationsEnabled(true);
+  };
+
+  useEffect(() => {
+    let adminChannel: any = null;
+
+    const verifyAndSubscribe = async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!session) {
+        window.location.replace('/admin/login');
+        return;
+      }
+
+      setAuthenticated(true);
+      fetchAllData();
+
+      if (adminChannel) {
+        await supabase.removeChannel(adminChannel);
+      }
+
+      const channelId = Date.now();
+
+      // Canal Multiplexado en Tiempo Real (PERF-03)
+      adminChannel = supabase
+        .channel(`realtime_admin_${channelId}`)
+        // 1. Reservas
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'reservations' }, (payload) => {
+          if (payload.eventType === 'INSERT') {
+            const newRes = payload.new as Reservation;
+            if (notificationsRef.current) {
+              playNotificationSound();
+              if ('Notification' in window && Notification.permission === 'granted') {
+                new Notification(`☕ Nueva Reserva: ${newRes.name}`, {
+                  body: `${newRes.guests} personas • ${newRes.reservation_date} a las ${newRes.reservation_time}`,
+                  icon: '/favicon.ico',
+                });
+              }
+            }
+            setNewArrivalAlert(`Nueva reserva de ${newRes.name} (${newRes.guests} personas)`);
+            setReservations((prev) => {
+              if (prev.some((r) => r.id === newRes.id)) return prev;
+              return [newRes, ...prev].slice(0, 50);
+            });
+            fetchStatsCounts(); // Recalcular métricas exactas
+          } else if (payload.eventType === 'UPDATE') {
+            const updated = payload.new as Reservation;
+            setReservations((prev) => prev.map((r) => (r.id === updated.id ? updated : r)));
+            fetchStatsCounts();
+          } else if (payload.eventType === 'DELETE') {
+            setReservations((prev) => prev.filter((r) => r.id !== payload.old.id));
+            fetchStatsCounts();
+          }
+        })
+        // 2. Menú
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'menu_items' }, (payload) => {
+          if (payload.eventType === 'INSERT') {
+            const newItem = payload.new as MenuItem;
+            setMenuItems((prev) => {
+              if (prev.some((m) => m.id === newItem.id)) return prev;
+              return [newItem, ...prev];
+            });
+            fetchStatsCounts();
+          } else if (payload.eventType === 'UPDATE') {
+            const updated = payload.new as MenuItem;
+            setMenuItems((prev) => prev.map((m) => (m.id === updated.id ? updated : m)));
+            fetchStatsCounts();
+          } else if (payload.eventType === 'DELETE') {
+            setMenuItems((prev) => prev.filter((m) => m.id !== payload.old.id));
+            fetchStatsCounts();
+          }
+        })
+        // 3. Reseñas
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'reviews' }, (payload) => {
+          if (payload.eventType === 'INSERT') {
+            const newRev = payload.new as AdminReview;
+            if (notificationsRef.current) {
+              playNotificationSound();
+              if ('Notification' in window && Notification.permission === 'granted') {
+                new Notification(`⭐ Nueva Reseña: ${newRev.name}`, {
+                  body: `${newRev.stars}★: "${(newRev.comment || '').slice(0, 70)}..."`,
+                  icon: '/favicon.ico',
+                });
+              }
+            }
+            setNewArrivalAlert(`Nueva reseña de ${newRev.name} (${newRev.stars}★)`);
+            setReviews((prev) => {
+              if (prev.some((r) => r.id === newRev.id)) return prev;
+              return [newRev, ...prev];
+            });
+          } else if (payload.eventType === 'UPDATE') {
+            const updated = payload.new as AdminReview;
+            setReviews((prev) => prev.map((r) => (r.id === updated.id ? updated : r)));
+          } else if (payload.eventType === 'DELETE') {
+            setReviews((prev) => prev.filter((r) => r.id !== payload.old.id));
+          }
+        })
+        .subscribe();
     };
 
-    checkAuth();
+    verifyAndSubscribe();
+
+    const handlePageShow = (e: PageTransitionEvent) => {
+      if (e.persisted) verifyAndSubscribe();
+    };
+
+    window.addEventListener('pageshow', handlePageShow);
+    return () => {
+      window.removeEventListener('pageshow', handlePageShow);
+      if (adminChannel) supabase.removeChannel(adminChannel);
+    };
   }, [router]);
+
+  const fetchAllData = async () => {
+    setLoading(true);
+    await Promise.all([fetchReservations(), fetchMenuItems(), fetchReviews(), fetchStatsCounts()]);
+    setLoading(false);
+  };
+
+  // 1. Carga acotada en memoria (PERF-01)
+  const fetchReservations = async () => {
+    const { data } = await supabase
+      .from('reservations')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(50);
+    setReservations(data || []);
+  };
+
+  // 2. Consulta de métricas agregadas exactas (PERF-11)
+  const fetchStatsCounts = async () => {
+    const [
+      { count: totalCount },
+      { count: pendingCount },
+      { data: confirmedData },
+      { count: seasonalCount },
+    ] = await Promise.all([
+      supabase.from('reservations').select('*', { count: 'exact', head: true }),
+      supabase.from('reservations').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
+      supabase.from('reservations').select('guests').neq('status', 'cancelled'),
+      supabase.from('menu_items').select('*', { count: 'exact', head: true }).eq('is_seasonal', true),
+    ]);
+
+    const totalGuests = (confirmedData || []).reduce(
+      (acc, curr) => acc + (Number(curr.guests) || 0),
+      0
+    );
+
+    setStats({
+      total: totalCount || 0,
+      pending: pendingCount || 0,
+      confirmedGuests: totalGuests,
+      seasonalCount: seasonalCount || 0,
+    });
+  };
+
+  const fetchMenuItems = async () => {
+    const { data } = await supabase.from('menu_items').select('*').order('created_at', { ascending: false });
+    setMenuItems(data || []);
+  };
+
+  const fetchReviews = async () => {
+    const { data } = await supabase.from('reviews').select('*').order('created_at', { ascending: false }).limit(50);
+    setReviews(data || []);
+  };
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
     router.push('/admin/login');
   };
 
-  const fetchReservations = async () => {
-    setLoading(true);
-    const { data } = await supabase
-      .from('reservations')
-      .select('*')
-      .order('created_at', { ascending: false });
-
-    setReservations(data || []);
-    setLoading(false);
-  };
-
-  const fetchMenuItems = async () => {
-    const { data } = await supabase
-      .from('menu_items')
-      .select('*')
-      .order('created_at', { ascending: false });
-
-    setMenuItems(data || []);
-  };
-
   const updateStatus = async (id: string, newStatus: string) => {
-    const { error } = await supabase
-      .from('reservations')
-      .update({ status: newStatus })
-      .eq('id', id);
-
+    const { error } = await supabase.from('reservations').update({ status: newStatus }).eq('id', id);
     if (!error) {
-      setReservations((prev) =>
-        prev.map((r) => (r.id === id ? { ...r, status: newStatus } : r))
-      );
+      setReservations((prev) => prev.map((r) => (r.id === id ? { ...r, status: newStatus } : r)));
+      fetchStatsCounts();
     }
   };
 
-  const handleAddProduct = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newTitle || !newPrice) return;
-
-    setIsAdding(true);
-    const { error } = await supabase.from('menu_items').insert([
-      {
-        title: newTitle,
-        description: newDesc,
-        price: parseFloat(newPrice),
-        category: newCategory,
-        image_url: newImageUrl || 'https://images.unsplash.com/photo-1510591509098-f4fdc6d0ff04?auto=format&fit=crop&q=80&w=600',
-      },
-    ]);
-
+  const handleApproveReview = async (id: string) => {
+    const { error } = await supabase.from('reviews').update({ is_approved: true }).eq('id', id);
     if (!error) {
-      setNewTitle('');
-      setNewDesc('');
-      setNewPrice('');
-      setNewImageUrl('');
-      fetchMenuItems();
-    } else {
-      alert('Error al agregar el producto');
+      setReviews((prev) => prev.map((r) => (r.id === id ? { ...r, is_approved: true } : r)));
     }
-    setIsAdding(false);
   };
 
-  const openEditModal = (item: MenuItem) => {
-    setEditingItem(item);
-    setEditTitle(item.title);
-    setEditDesc(item.description);
-    setEditPrice(item.price.toString());
-    setEditCategory(item.category);
-    setEditImageUrl(item.image_url);
+  const handleDeleteReview = async (id: string) => {
+    if (!confirm('¿Seguro que deseas eliminar esta reseña?')) return;
+    const { error } = await supabase.from('reviews').delete().eq('id', id);
+    if (!error) {
+      setReviews((prev) => prev.filter((r) => r.id !== id));
+    }
   };
 
-  const handleUpdateProduct = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!editingItem || !editTitle || !editPrice) return;
-
-    setIsUpdating(true);
-    const { error } = await supabase
+  const handleAddProduct = async (productData: any) => {
+    const { data, error } = await supabase
       .from('menu_items')
-      .update({
-        title: editTitle,
-        description: editDesc,
-        price: parseFloat(editPrice),
-        category: editCategory,
-        image_url: editImageUrl,
-      })
-      .eq('id', editingItem.id);
+      .insert([productData])
+      .select()
+      .single();
 
-    if (!error) {
+    if (!error && data) {
+      setMenuItems((prev) => [data as MenuItem, ...prev.filter((m) => m.id !== data.id)]);
+      fetchStatsCounts();
+      return true;
+    }
+    alert('Error al agregar el producto');
+    return false;
+  };
+
+  // Actualización directa sin SELECT * redundante (PERF-02)
+  const handleUpdateProduct = async (updatedData: any) => {
+    if (!editingItem) return;
+    setIsUpdating(true);
+    const { data, error } = await supabase
+      .from('menu_items')
+      .update(updatedData)
+      .eq('id', editingItem.id)
+      .select()
+      .single();
+
+    if (!error && data) {
       setEditingItem(null);
-      fetchMenuItems();
+      setMenuItems((prev) => prev.map((m) => (m.id === data.id ? (data as MenuItem) : m)));
+      fetchStatsCounts();
     } else {
       alert('Error al actualizar el producto');
     }
@@ -168,320 +297,222 @@ export default function AdminDashboard() {
   };
 
   const handleDeleteProduct = async (id: string) => {
-    if (!confirm('¿Seguro que deseas eliminar este producto?')) return;
+    if (!confirm('¿Seguro que deseas eliminar este producto del menú en vivo?')) return;
     const { error } = await supabase.from('menu_items').delete().eq('id', id);
     if (!error) {
       setMenuItems((prev) => prev.filter((item) => item.id !== id));
+      fetchStatsCounts();
     }
+  };
+
+  const toggleFeaturedProduct = async (item: MenuItem) => {
+    const nextState = !item.is_featured;
+    const { error } = await supabase
+      .from('menu_items')
+      .update({ is_featured: nextState })
+      .eq('id', item.id);
+    if (!error) {
+      setMenuItems((prev) => prev.map((m) => (m.id === item.id ? { ...m, is_featured: nextState } : m)));
+    } else {
+      alert('No se pudo actualizar el estado de producto destacado');
+    }
+  };
+
+  const toggleSeasonalProduct = async (item: MenuItem) => {
+    const nextState = !item.is_seasonal;
+    const { error } = await supabase.from('menu_items').update({ is_seasonal: nextState }).eq('id', item.id);
+    if (!error) {
+      setMenuItems((prev) => prev.map((m) => (m.id === item.id ? { ...m, is_seasonal: nextState } : m)));
+      fetchStatsCounts();
+    }
+  };
+
+  const pendingReviewsCount = useMemo(() => {
+    return reviews.filter((r) => !r.is_approved).length;
+  }, [reviews]);
+
+  // Filtrado reactivo con Debounce (PERF-04)
+  const filteredReservations = useMemo(() => {
+    const q = debouncedSearchQuery.toLowerCase().trim();
+    return reservations.filter((res) => {
+      const matchesStatus = statusFilter === 'all' || res.status === statusFilter;
+      const matchesSearch =
+        !q ||
+        (res.name && res.name.toLowerCase().includes(q)) ||
+        (res.email && res.email.toLowerCase().includes(q)) ||
+        (res.phone && res.phone.includes(q));
+      return matchesStatus && matchesSearch;
+    });
+  }, [reservations, statusFilter, debouncedSearchQuery]);
+
+  // Exportación bajo demanda (PERF-01)
+  const exportToCSV = async () => {
+    const { data: allHistory, error } = await supabase
+      .from('reservations')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error || !allHistory || allHistory.length === 0) {
+      alert('No hay reservas disponibles para exportar.');
+      return;
+    }
+
+    const headers = [
+      'ID',
+      'Fecha Creación',
+      'Nombre',
+      'Email',
+      'Teléfono',
+      'Personas',
+      'Fecha Reserva',
+      'Hora',
+      'Zona',
+      'Estado',
+    ];
+    const rows = allHistory.map((r) => [
+      r.id,
+      r.created_at,
+      `"${r.name}"`,
+      r.email,
+      r.phone,
+      r.guests,
+      r.reservation_date,
+      r.reservation_time,
+      `"${r.zone || 'Salón Principal'}"`,
+      r.status,
+    ]);
+    const csvContent =
+      'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `reservas_velvet_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   if (!authenticated) {
     return (
-      <div className="min-h-screen bg-[#100D0A] flex items-center justify-center text-xs text-[#A39B92]">
-        Verificando acceso...
+      <div className="min-h-screen bg-[#0C0A09] flex items-center justify-center text-xs text-[#A39B92] px-4">
+        <div className="flex items-center gap-2.5 p-4 rounded-2xl bg-[#14110E] border border-[#2D2620]">
+          <RefreshCw className="animate-spin text-[#D57E7E]" size={16} />
+          <span>Verificando credenciales de seguridad...</span>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[#100D0A] text-[#F8F5F2] p-6 md:p-12">
-      <div className="max-w-6xl mx-auto space-y-8">
+    <div className="min-h-screen bg-[#0C0A09] text-[#F8F5F2] relative overflow-hidden">
+      <div className="absolute top-0 right-0 w-[300px] sm:w-[600px] h-[300px] sm:h-[600px] bg-[#D57E7E]/5 rounded-full blur-[120px] sm:blur-[180px] pointer-events-none" />
 
-        {/* Header del Dashboard */}
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-[#2D2620] pb-6">
-          <div>
-            <h1 className="text-3xl font-serif font-bold">Panel de Administración</h1>
-            <p className="text-sm text-[#A39B92] mt-1">Gestión integral de reservas y catálogo de la cafetería</p>
-          </div>
-          <div className="flex items-center gap-3">
+      <AdminHeader
+        notificationsEnabled={notificationsEnabled}
+        toggleNotifications={toggleBrowserNotifications}
+        loading={loading}
+        onRefresh={fetchAllData}
+        onLogout={handleLogout}
+        newArrivalAlert={newArrivalAlert}
+      />
+
+      <main className="max-w-7xl mx-auto p-3 sm:p-6 lg:p-8 space-y-6 sm:space-y-8 relative z-10">
+        <AdminStats stats={stats} />
+
+        {/* Pestañas de Navegación */}
+        <div className="flex items-center justify-between border-b border-[#2D2620] pb-4 flex-wrap gap-3">
+          <div className="flex gap-2 w-full sm:w-auto flex-wrap">
             <button
-              onClick={() => { fetchReservations(); fetchMenuItems(); }}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-[#231F1B] hover:bg-[#2D2620] text-xs font-semibold border border-[#2D2620] cursor-pointer"
+              onClick={() => setActiveTab('reservations')}
+              className={`flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 sm:px-5 py-2.5 rounded-2xl text-[11px] sm:text-xs font-bold uppercase tracking-wider cursor-pointer transition-all ${activeTab === 'reservations'
+                  ? 'bg-[#D57E7E] text-white shadow-lg shadow-[#D57E7E]/20'
+                  : 'bg-[#14110E] text-[#A39B92] hover:text-white border border-[#2D2620]'
+                }`}
             >
-              <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Actualizar
+              <Utensils size={14} />
+              <span>Reservas ({stats.total})</span>
             </button>
+
             <button
-              onClick={handleLogout}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 text-xs font-semibold border border-rose-500/20 cursor-pointer transition-colors"
+              onClick={() => setActiveTab('menu')}
+              className={`flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 sm:px-5 py-2.5 rounded-2xl text-[11px] sm:text-xs font-bold uppercase tracking-wider cursor-pointer transition-all ${activeTab === 'menu'
+                  ? 'bg-[#D57E7E] text-white shadow-lg shadow-[#D57E7E]/20'
+                  : 'bg-[#14110E] text-[#A39B92] hover:text-white border border-[#2D2620]'
+                }`}
             >
-              <LogOut size={14} /> Salir
+              <Coffee size={14} />
+              <span>Catálogo ({menuItems.length})</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('reviews')}
+              className={`flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 sm:px-5 py-2.5 rounded-2xl text-[11px] sm:text-xs font-bold uppercase tracking-wider cursor-pointer transition-all relative ${activeTab === 'reviews'
+                  ? 'bg-[#D57E7E] text-white shadow-lg shadow-[#D57E7E]/20'
+                  : 'bg-[#14110E] text-[#A39B92] hover:text-white border border-[#2D2620]'
+                }`}
+            >
+              <Star size={14} />
+              <span>Reseñas ({reviews.length})</span>
+              {pendingReviewsCount > 0 && (
+                <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+              )}
             </button>
           </div>
+
+          {activeTab === 'reservations' && (
+            <button
+              onClick={exportToCSV}
+              className="w-full sm:w-auto flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-[#181512] hover:bg-[#231F1B] border border-[#2D2620] text-xs font-semibold text-[#C5BCB3] hover:text-white cursor-pointer transition-colors"
+            >
+              <Download size={13} />
+              <span>Exportar Todo a CSV</span>
+            </button>
+          )}
         </div>
 
-        {/* Selector de Pestañas */}
-        <div className="flex gap-4 border-b border-[#2D2620] pb-4">
-          <button
-            onClick={() => setActiveTab('reservations')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold cursor-pointer transition-all ${activeTab === 'reservations'
-              ? 'bg-[#D57E7E] text-white'
-              : 'bg-[#181512] text-[#A39B92] hover:text-white border border-[#2D2620]'
-              }`}
-          >
-            <Utensils size={14} /> Reservas ({reservations.length})
-          </button>
-          <button
-            onClick={() => setActiveTab('menu')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold cursor-pointer transition-all ${activeTab === 'menu'
-              ? 'bg-[#D57E7E] text-white'
-              : 'bg-[#181512] text-[#A39B92] hover:text-white border border-[#2D2620]'
-              }`}
-          >
-            <Coffee size={14} /> Menú ({menuItems.length})
-          </button>
-        </div>
-
-        {/* Pestaña Reservas */}
+        {/* Vistas por Pestaña */}
         {activeTab === 'reservations' && (
-          <div>
-            {loading ? (
-              <p className="text-sm text-[#A39B92] text-center py-12">Cargando reservas desde Supabase...</p>
-            ) : reservations.length === 0 ? (
-              <p className="text-sm text-[#A39B92] text-center py-12">No hay reservas registradas aún.</p>
-            ) : (
-              <div className="grid gap-4">
-                {reservations.map((res) => (
-                  <div
-                    key={res.id}
-                    className="p-5 rounded-2xl bg-[#181512] border border-[#2D2620] flex flex-col md:flex-row justify-between items-start md:items-center gap-4"
-                  >
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-3">
-                        <h3 className="font-bold text-base text-white">{res.name}</h3>
-                        <span
-                          className={`text-[10px] px-2.5 py-0.5 rounded-full uppercase font-bold tracking-wider ${res.status === 'confirmed'
-                            ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                            : res.status === 'cancelled'
-                              ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
-                              : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                            }`}
-                        >
-                          {res.status === 'confirmed' ? 'Confirmada' : res.status === 'cancelled' ? 'Cancelada' : 'Pendiente'}
-                        </span>
-                      </div>
-
-                      <div className="flex flex-wrap gap-4 text-xs text-[#A39B92]">
-                        <span className="flex items-center gap-1"><Mail size={12} /> {res.email}</span>
-                        <span className="flex items-center gap-1"><Phone size={12} /> {res.phone}</span>
-                        <span className="flex items-center gap-1"><Users size={12} /> {res.guests} personas</span>
-                        <span className="flex items-center gap-1"><Calendar size={12} /> {res.reservation_date}</span>
-                        <span className="flex items-center gap-1"><Clock size={12} /> {res.reservation_time}</span>
-                        <span className="px-2 py-0.5 rounded-md bg-[#231F1B] text-[#D57E7E] font-medium border border-[#2D2620]">
-                          Zona: {res.zone || 'Salón Principal'}
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-2 self-end md:self-auto">
-                      <button
-                        onClick={() => updateStatus(res.id, 'confirmed')}
-                        className="p-2 rounded-xl bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer"
-                      >
-                        <CheckCircle size={16} /> Confirmar
-                      </button>
-                      <button
-                        onClick={() => updateStatus(res.id, 'cancelled')}
-                        className="p-2 rounded-xl bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer"
-                      >
-                        <XCircle size={16} /> Cancelar
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+          <ReservationsTab
+            reservations={filteredReservations}
+            loading={loading}
+            searchQuery={searchQuery}
+            setSearchQuery={setSearchQuery}
+            statusFilter={statusFilter}
+            setStatusFilter={setStatusFilter}
+            updateStatus={updateStatus}
+          />
         )}
 
-        {/* Pestaña Menú */}
         {activeTab === 'menu' && (
-          <div className="space-y-8">
-            {/* Formulario para Agregar Producto */}
-            <form onSubmit={handleAddProduct} className="p-6 rounded-2xl bg-[#181512] border border-[#2D2620] space-y-4">
-              <h2 className="text-lg font-bold flex items-center gap-2">
-                <Plus size={18} className="text-[#D57E7E]" /> Agregar Nuevo Producto
-              </h2>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <input
-                  type="text"
-                  placeholder="Nombre del producto"
-                  value={newTitle}
-                  onChange={(e) => setNewTitle(e.target.value)}
-                  required
-                  className="p-2.5 rounded-xl bg-[#231F1B] border border-[#2D2620] text-sm text-white focus:border-[#D57E7E] outline-none"
-                />
-                <input
-                  type="number"
-                  step="0.01"
-                  placeholder="Precio en $"
-                  value={newPrice}
-                  onChange={(e) => setNewPrice(e.target.value)}
-                  required
-                  className="p-2.5 rounded-xl bg-[#231F1B] border border-[#2D2620] text-sm text-white focus:border-[#D57E7E] outline-none"
-                />
-                <select
-                  value={newCategory}
-                  onChange={(e) => setNewCategory(e.target.value)}
-                  className="p-2.5 rounded-xl bg-[#231F1B] border border-[#2D2620] text-sm text-white focus:border-[#D57E7E] outline-none"
-                >
-                  <option value="cafes">Cafés y Bebidas</option>
-                  <option value="postres">Postres y Repostería</option>
-                  <option value="especiales">Especiales de la Casa</option>
-                </select>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <input
-                  type="text"
-                  placeholder="Descripción corta"
-                  value={newDesc}
-                  onChange={(e) => setNewDesc(e.target.value)}
-                  className="p-2.5 rounded-xl bg-[#231F1B] border border-[#2D2620] text-sm text-white focus:border-[#D57E7E] outline-none"
-                />
-                <input
-                  type="url"
-                  placeholder="URL de Imagen (Unsplash o CDN)"
-                  value={newImageUrl}
-                  onChange={(e) => setNewImageUrl(e.target.value)}
-                  className="p-2.5 rounded-xl bg-[#231F1B] border border-[#2D2620] text-sm text-white focus:border-[#D57E7E] outline-none"
-                />
-              </div>
-              <button
-                type="submit"
-                disabled={isAdding}
-                className="px-6 py-2.5 rounded-xl bg-[#D57E7E] text-white text-xs font-semibold hover:bg-[#c26d6d] transition-all cursor-pointer disabled:opacity-50"
-              >
-                {isAdding ? 'Guardando...' : 'Guardar Producto'}
-              </button>
-            </form>
-
-            {/* Listado de Productos con Editar y Eliminar */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {menuItems.map((item) => (
-                <div key={item.id} className="p-4 rounded-2xl bg-[#181512] border border-[#2D2620] flex gap-4 items-center justify-between">
-                  <div className="flex items-center gap-4">
-                    <img src={item.image_url} alt={item.title} className="w-16 h-16 rounded-xl object-cover" />
-                    <div>
-                      <h3 className="font-bold text-sm text-white">{item.title}</h3>
-                      <p className="text-xs text-[#A39B92] line-clamp-1">{item.description}</p>
-                      <span className="text-xs font-semibold text-[#D57E7E] mt-1 block">${item.price.toFixed(2)}</span>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => openEditModal(item)}
-                      className="p-2.5 rounded-xl bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 transition-colors cursor-pointer"
-                      title="Editar Producto"
-                    >
-                      <Edit size={16} />
-                    </button>
-                    <button
-                      onClick={() => handleDeleteProduct(item.id)}
-                      className="p-2.5 rounded-xl bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 transition-colors cursor-pointer"
-                      title="Eliminar Producto"
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+          <MenuTab
+            menuItems={menuItems}
+            loading={loading}
+            onAddProduct={handleAddProduct}
+            onToggleFeatured={toggleFeaturedProduct}
+            onToggleSeasonal={toggleSeasonalProduct}
+            onOpenEdit={(item) => setEditingItem(item)}
+            onDeleteProduct={handleDeleteProduct}
+          />
         )}
 
-        {/* Modal para Editar Producto */}
+        {activeTab === 'reviews' && (
+          <ReviewsTab
+            reviews={reviews}
+            loading={loading}
+            onApprove={handleApproveReview}
+            onDelete={handleDeleteReview}
+          />
+        )}
+
         {editingItem && (
-          <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50">
-            <div className="bg-[#181512] border border-[#2D2620] rounded-3xl p-6 max-w-lg w-full space-y-4">
-              <div className="flex justify-between items-center">
-                <h3 className="font-bold text-lg text-white">Editar Producto</h3>
-                <button
-                  onClick={() => setEditingItem(null)}
-                  className="text-[#A39B92] hover:text-white cursor-pointer"
-                >
-                  <X size={20} />
-                </button>
-              </div>
-
-              <form onSubmit={handleUpdateProduct} className="space-y-4">
-                <div>
-                  <label className="block text-xs font-medium text-[#A39B92] mb-1">Título</label>
-                  <input
-                    type="text"
-                    value={editTitle}
-                    onChange={(e) => setEditTitle(e.target.value)}
-                    required
-                    className="w-full p-2.5 rounded-xl bg-[#231F1B] border border-[#2D2620] text-sm text-white focus:border-[#D57E7E] outline-none"
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-medium text-[#A39B92] mb-1">Precio ($)</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={editPrice}
-                      onChange={(e) => setEditPrice(e.target.value)}
-                      required
-                      className="w-full p-2.5 rounded-xl bg-[#231F1B] border border-[#2D2620] text-sm text-white focus:border-[#D57E7E] outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-[#A39B92] mb-1">Categoría</label>
-                    <select
-                      value={editCategory}
-                      onChange={(e) => setEditCategory(e.target.value)}
-                      className="w-full p-2.5 rounded-xl bg-[#231F1B] border border-[#2D2620] text-sm text-white focus:border-[#D57E7E] outline-none"
-                    >
-                      <option value="cafes">Cafés</option>
-                      <option value="postres">Postres</option>
-                      <option value="especiales">Especiales</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-medium text-[#A39B92] mb-1">Descripción</label>
-                  <textarea
-                    value={editDesc}
-                    onChange={(e) => setEditDesc(e.target.value)}
-                    rows={2}
-                    className="w-full p-2.5 rounded-xl bg-[#231F1B] border border-[#2D2620] text-sm text-white focus:border-[#D57E7E] outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-medium text-[#A39B92] mb-1">URL Imagen</label>
-                  <input
-                    type="url"
-                    value={editImageUrl}
-                    onChange={(e) => setEditImageUrl(e.target.value)}
-                    className="w-full p-2.5 rounded-xl bg-[#231F1B] border border-[#2D2620] text-sm text-white focus:border-[#D57E7E] outline-none"
-                  />
-                </div>
-
-                <div className="flex gap-2 pt-2">
-                  <button
-                    type="button"
-                    onClick={() => setEditingItem(null)}
-                    className="w-1/2 py-2.5 rounded-xl bg-[#231F1B] text-[#A39B92] text-xs font-semibold hover:text-white cursor-pointer"
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={isUpdating}
-                    className="w-1/2 py-2.5 rounded-xl bg-[#D57E7E] text-white text-xs font-semibold hover:bg-[#c26d6d] cursor-pointer disabled:opacity-50"
-                  >
-                    {isUpdating ? 'Actualizando...' : 'Guardar Cambios'}
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
+          <EditMenuModal
+            item={editingItem}
+            onClose={() => setEditingItem(null)}
+            onUpdate={handleUpdateProduct}
+            isUpdating={isUpdating}
+          />
         )}
-
-      </div>
+      </main>
     </div>
   );
 }

@@ -7,26 +7,28 @@ interface ScrollRevealProps {
     children: ReactNode;
     delay?: number;
     direction?: 'up' | 'down' | 'left' | 'right';
+    className?: string;
 }
 
 export function ScrollReveal({
     children,
     delay = 0,
     direction = 'up',
+    className = '',
 }: ScrollRevealProps) {
-    // Configuración de la posición inicial según la dirección deseada
+    // Desplazamientos seguros y fluidos para evitar desbordes laterales
     const getInitialPosition = () => {
         switch (direction) {
             case 'up':
-                return { y: 40, x: 0 };
+                return { y: 24, x: 0 };
             case 'down':
-                return { y: -40, x: 0 };
+                return { y: -24, x: 0 };
             case 'left':
-                return { x: 40, y: 0 };
+                return { x: 20, y: 0 };
             case 'right':
-                return { x: -40, y: 0 };
+                return { x: -20, y: 0 };
             default:
-                return { y: 40, x: 0 };
+                return { y: 24, x: 0 };
         }
     };
 
@@ -34,12 +36,13 @@ export function ScrollReveal({
         <motion.div
             initial={{ opacity: 0, ...getInitialPosition() }}
             whileInView={{ opacity: 1, x: 0, y: 0 }}
-            viewport={{ once: false, amount: 0.2 }} // amount: 0.2 activa la animación cuando se ve el 20% del elemento
+            viewport={{ once: true, amount: 0.08 }}
             transition={{
-                duration: 0.6,
+                duration: 0.55,
                 delay: delay,
-                ease: [0.21, 0.47, 0.32, 0.98], // Curva suave tipo Apple
+                ease: [0.21, 0.47, 0.32, 0.98],
             }}
+            className={`w-full ${className}`}
         >
             {children}
         </motion.div>
