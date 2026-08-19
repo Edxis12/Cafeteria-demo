@@ -18,7 +18,7 @@ export function SessionGuard() {
         }
 
         // 2. Notificar al backend para revocar sesión en servidor
-        fetch('/api/auth/logout', { method: 'POST' }).catch(() => { });
+        fetch('/api/logout', { method: 'POST' }).catch(() => { });
     }, []);
 
     return null;

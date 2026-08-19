@@ -26,13 +26,14 @@ export async function GET(request: NextRequest) {
         .order('created_at', { ascending: false });
 
     if (error) {
+        console.error('Error en GET /api/reviews:', error);
         return NextResponse.json(
-            { error: 'Error al obtener las reseñas públicas.' },
+            { error: 'Error al obtener las reseñas públicas.', details: error.message },
             { status: 500 }
         );
     }
 
-    return NextResponse.json(data, {
+    return NextResponse.json(data || [], {
         status: 200,
         headers: {
             'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=120',
@@ -44,9 +45,8 @@ export async function GET(request: NextRequest) {
 // 2. ENVIAR NUEVA RESEÑA (PÚBLICO CON MODERACIÓN OBLIGATORIA)
 // =========================================================================
 export async function POST(request: NextRequest) {
-    // 1. Rate Limiting por IP: 3 reseñas cada 30 minutos (1800s)
     const rateLimit = checkRateLimit(request, 'reviews_post', {
-        limit: 3,
+        limit: 5,
         windowSeconds: 1800,
     });
 
@@ -57,27 +57,19 @@ export async function POST(request: NextRequest) {
                     rateLimit.reset / 60
                 )} minutos antes de enviar otra.`,
             },
-            {
-                status: 429,
-                headers: {
-                    'Retry-After': String(rateLimit.reset),
-                    'X-RateLimit-Limit': String(rateLimit.limit),
-                    'X-RateLimit-Remaining': '0',
-                    'X-RateLimit-Reset': String(rateLimit.reset),
-                },
-            }
+            { status: 429 }
         );
     }
 
     try {
         const body = await request.json();
 
-        // 2. Filtro Anti-Bot Honeypot (campo oculto trampa)
+        // Anti-Bot Honeypot
         if (body.website_hp_check && body.website_hp_check.trim() !== '') {
             return NextResponse.json({ success: true }, { status: 200 });
         }
 
-        // 3. Validación y Sanitización
+        // Validación y Sanitización
         const { isValid, errors, cleanData } = validateAndSanitizeReview(body);
 
         if (!isValid || !cleanData) {
@@ -87,25 +79,24 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        // 4. Inserción Segura: is_approved forzado a FALSE en el servidor
-        const { data, error: dbError } = await supabase
+        // Inserción sin forzar .single() para evitar conflicto de RLS
+        const { error: dbError } = await supabase
             .from('reviews')
             .insert([
                 {
                     name: cleanData.name,
                     role: cleanData.role || 'Cliente Frecuente',
                     comment: cleanData.comment,
-                    stars: Math.min(Math.max(Number(cleanData.stars) || 5, 1), 5), // Garantiza rango 1-5
+                    stars: Math.min(Math.max(Number(cleanData.stars) || 5, 1), 5),
                     avatar: cleanData.avatar || cleanData.name.slice(0, 2).toUpperCase(),
-                    is_approved: false, // OBLIGATORIO: requiere aprobación manual del admin
+                    is_approved: false,
                 },
-            ])
-            .select('id, name, comment, stars, is_approved, created_at')
-            .single();
+            ]);
 
         if (dbError) {
+            console.error('Error en POST /api/reviews:', dbError);
             return NextResponse.json(
-                { error: 'No se pudo guardar la reseña. Intenta más tarde.' },
+                { error: 'No se pudo guardar la reseña.', details: dbError.message },
                 { status: 500 }
             );
         }
@@ -114,21 +105,14 @@ export async function POST(request: NextRequest) {
             {
                 success: true,
                 message: 'Tu reseña fue enviada con éxito y está pendiente de moderación.',
-                review: data,
             },
-            {
-                status: 201,
-                headers: {
-                    'Cache-Control': 'no-store',
-                    'X-RateLimit-Limit': String(rateLimit.limit),
-                    'X-RateLimit-Remaining': String(rateLimit.remaining),
-                },
-            }
+            { status: 201 }
         );
-    } catch {
+    } catch (err: unknown) {
+        console.error('Error general en POST /api/reviews:', err);
         return NextResponse.json(
-            { error: 'El cuerpo de la solicitud no contiene un JSON válido.' },
-            { status: 400 }
+            { error: 'Error procesando la solicitud en el servidor.' },
+            { status: 500 }
         );
     }
 }
