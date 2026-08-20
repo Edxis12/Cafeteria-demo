@@ -112,9 +112,9 @@ export async function uploadImageToCloudinary(file: File): Promise<string> {
         );
 
         return optimizedUrl;
-    } catch (error: any) {
+    } catch (error: unknown) {
         clearTimeout(timeoutId);
-        if (error.name === 'AbortError') {
+        if (error instanceof Error && error.name === 'AbortError') {
             throw new Error('La subida de imagen tardó demasiado. Revisa tu conexión a internet.');
         }
         throw error;

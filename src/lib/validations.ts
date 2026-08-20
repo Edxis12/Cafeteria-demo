@@ -10,10 +10,13 @@ export interface ValidationError {
     message: string;
 }
 
+// Tipo seguro para entradas no confiables
+type RawInput = Record<string, unknown> | null | undefined;
+
 // ==========================================
 // 1. VALIDACIÓN & SANITIZACIÓN: RESERVAS
 // ==========================================
-export function validateAndSanitizeReservation(data: any): {
+export function validateAndSanitizeReservation(data: RawInput): {
     isValid: boolean;
     errors: ValidationError[];
     cleanData?: {
@@ -28,16 +31,16 @@ export function validateAndSanitizeReservation(data: any): {
 } {
     const errors: ValidationError[] = [];
 
-    const name = sanitizeText(data?.name);
-    const email = sanitizeEmail(data?.email);
-    const phone = sanitizePhone(data?.phone);
-    const reservation_date = sanitizeText(data?.reservation_date);
-    const reservation_time = sanitizeText(data?.reservation_time);
-    const rawZone = sanitizeText(data?.zone);
+    const name = sanitizeText(typeof data?.name === 'string' ? data.name : '');
+    const email = sanitizeEmail(typeof data?.email === 'string' ? data.email : '');
+    const phone = sanitizePhone(typeof data?.phone === 'string' ? data.phone : '');
+    const reservation_date = sanitizeText(typeof data?.reservation_date === 'string' ? data.reservation_date : '');
+    const reservation_time = sanitizeText(typeof data?.reservation_time === 'string' ? data.reservation_time : '');
+    const rawZone = sanitizeText(typeof data?.zone === 'string' ? data.zone : '');
 
     // 1. Validación explícita de comensales (sin defaults silenciosos)
     const rawGuests = Number(data?.guests);
-    if (!data?.guests || isNaN(rawGuests) || !Number.isInteger(rawGuests)) {
+    if (data?.guests === undefined || data?.guests === null || isNaN(rawGuests) || !Number.isInteger(rawGuests)) {
         errors.push({ field: 'guests', message: 'El número de comensales debe ser un número entero.' });
     } else if (rawGuests < 1 || rawGuests > 10) {
         errors.push({ field: 'guests', message: 'El número de comensales permitido es de 1 a 10 personas.' });
@@ -121,7 +124,7 @@ export function validateAndSanitizeReservation(data: any): {
 // ==========================================
 // 2. VALIDACIÓN & SANITIZACIÓN: RESEÑAS
 // ==========================================
-export function validateAndSanitizeReview(data: any): {
+export function validateAndSanitizeReview(data: RawInput): {
     isValid: boolean;
     errors: ValidationError[];
     cleanData?: {
@@ -135,13 +138,13 @@ export function validateAndSanitizeReview(data: any): {
 } {
     const errors: ValidationError[] = [];
 
-    const name = sanitizeText(data?.name);
-    const role = sanitizeText(data?.role) || 'Cliente Frecuente';
-    const comment = sanitizeText(data?.comment);
+    const name = sanitizeText(typeof data?.name === 'string' ? data.name : '');
+    const role = sanitizeText(typeof data?.role === 'string' ? data.role : '') || 'Cliente Frecuente';
+    const comment = sanitizeText(typeof data?.comment === 'string' ? data.comment : '');
 
     // Validación estricta de estrellas (1 a 5)
     const rawStars = Number(data?.stars);
-    if (!data?.stars || isNaN(rawStars) || !Number.isInteger(rawStars) || rawStars < 1 || rawStars > 5) {
+    if (data?.stars === undefined || data?.stars === null || isNaN(rawStars) || !Number.isInteger(rawStars) || rawStars < 1 || rawStars > 5) {
         errors.push({ field: 'stars', message: 'La calificación debe ser un número entero entre 1 y 5 estrellas.' });
     }
     const stars = rawStars;
@@ -177,7 +180,7 @@ export function validateAndSanitizeReview(data: any): {
                     comment,
                     stars,
                     avatar,
-                    is_approved: false, // Siempre forzado a false para requerir aprobación
+                    is_approved: false,
                 }
                 : undefined,
     };
@@ -186,7 +189,7 @@ export function validateAndSanitizeReview(data: any): {
 // ==========================================
 // 3. VALIDACIÓN & SANITIZACIÓN: MENÚ
 // ==========================================
-export function validateAndSanitizeMenuItem(data: any): {
+export function validateAndSanitizeMenuItem(data: RawInput): {
     isValid: boolean;
     errors: ValidationError[];
     cleanData?: {
@@ -203,13 +206,13 @@ export function validateAndSanitizeMenuItem(data: any): {
 } {
     const errors: ValidationError[] = [];
 
-    const title = sanitizeText(data?.title);
-    const description = sanitizeText(data?.description);
-    const rawCategory = sanitizeText(data?.category).toLowerCase();
-    const rawImageUrl = sanitizeUrl(data?.image_url);
+    const title = sanitizeText(typeof data?.title === 'string' ? data.title : '');
+    const description = sanitizeText(typeof data?.description === 'string' ? data.description : '');
+    const rawCategory = sanitizeText(typeof data?.category === 'string' ? data.category : '').toLowerCase();
+    const rawImageUrl = sanitizeUrl(typeof data?.image_url === 'string' ? data.image_url : '');
     const is_featured = Boolean(data?.is_featured);
     const is_seasonal = Boolean(data?.is_seasonal);
-    const badge = sanitizeText(data?.badge) || 'Más Vendido';
+    const badge = sanitizeText(typeof data?.badge === 'string' ? data.badge : '') || 'Más Vendido';
 
     // Validación estricta de precio
     const rawPrice = Number(data?.price);
