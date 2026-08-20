@@ -1,15 +1,34 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
-// Lista de dominios permitidos (desarrollo, red local y producción)
+// Lista de dominios permitidos base
 const allowedOrigins = [
   'http://localhost:3000',
   'http://127.0.0.1:3000',
   'http://192.168.1.71:3000',
+  'https://cafeteria-demo-rz7x.vercel.app',
   'https://velvet-roasters.vercel.app',
-];
+  process.env.NEXT_PUBLIC_SITE_URL,
+].filter(Boolean) as string[];
+
+function checkOriginAllowed(origin: string | null, host: string | null): boolean {
+  // Peticiones directas, del mismo servidor o internas
+  if (!origin) return true;
+
+  // Lista explícita
+  if (allowedOrigins.includes(origin)) return true;
+
+  // Cualquier despliegue o preview en Vercel (*.vercel.app)
+  if (origin.endsWith('.vercel.app')) return true;
+
+  // Si el host coincide con el origin
+  if (host && origin.includes(host)) return true;
+
+  return false;
+}
 
 export function proxy(request: NextRequest) {
   const origin = request.headers.get('origin');
+  const host = request.headers.get('host');
   const isApiRoute = request.nextUrl.pathname.startsWith('/api');
 
   // Si no es ruta de API, dejamos pasar de inmediato
@@ -17,7 +36,7 @@ export function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
-  const isAllowedOrigin = origin ? allowedOrigins.includes(origin) : true;
+  const isAllowedOrigin = checkOriginAllowed(origin, host);
 
   // 1. Manejo de Preflight Requests (OPTIONS)
   if (request.method === 'OPTIONS') {
