@@ -372,14 +372,20 @@ export function ReservationForm() {
                       size={16}
                       className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none"
                     />
-                    <input
+                    <select
                       {...register("guests", { valueAsNumber: true })}
-                      type="number"
-                      autoComplete="off"
-                      min={1}
-                      max={10}
-                      className="w-full pl-11 pr-4 py-3 rounded-2xl bg-[#100D0A] border border-[#2D2620] focus:border-[#D57E7E] focus:ring-1 focus:ring-[#D57E7E]/30 text-sm text-white outline-none transition-all"
-                    />
+                      className="w-full pl-11 pr-4 py-3 rounded-2xl bg-[#100D0A] border border-[#2D2620] focus:border-[#D57E7E] focus:ring-1 focus:ring-[#D57E7E]/30 text-sm text-white [color-scheme:dark] cursor-pointer outline-none transition-all"
+                    >
+                      {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((num) => (
+                        <option
+                          key={num}
+                          value={num}
+                          className="bg-[#181512] text-white"
+                        >
+                          {num} {num === 1 ? "Persona" : "Personas"}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                   {errors.guests && (
                     <p className="text-[11px] text-rose-400 mt-1">
