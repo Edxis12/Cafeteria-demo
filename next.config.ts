@@ -7,6 +7,7 @@ const cspHeader = `
   img-src 'self' blob: data: https://res.cloudinary.com https://images.unsplash.com;
   font-src 'self' data:;
   connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.cloudinary.com;
+  frame-src 'self' https://www.google.com https://maps.google.com;
   frame-ancestors 'none';
 `.replace(/\s{2,}/g, ' ').trim();
 

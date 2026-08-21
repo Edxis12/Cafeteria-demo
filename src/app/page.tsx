@@ -8,6 +8,7 @@ import { InteractiveMenu } from '@/src/components/menu/InteractiveMenu';
 import { FooterSection } from '@/src/components/home/FooterSection';
 import { ScrollReveal } from '@/src/components/shared/ScrollReveal';
 import { SessionGuard } from '@/src/components/shared/SessionGuard';
+import { LocationSection } from '@/src/components/home/LocationSection';
 
 // 1. Carga diferida de ReservationForm (desacopla react-hook-form y zod del bundle principal)
 const DynamicReservationForm = dynamic(
@@ -82,6 +83,8 @@ export default async function HomePage() {
       <ScrollReveal direction="up" delay={0.1}>
         <DynamicReservationForm />
       </ScrollReveal>
+
+      <LocationSection />
 
       <FooterSection />
 
